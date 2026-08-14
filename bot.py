@@ -2,6 +2,7 @@ import logging
 import os
 import threading
 import asyncio
+import time
 import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
@@ -18,7 +19,7 @@ TOKEN = os.environ.get('TOKEN')
 if not TOKEN:
     raise ValueError("Токен не найден!")
 
-# ID менеджера (куда будут приходить заказы)
+# ID менеджера
 MANAGER_ID = 781584566
 
 # Flask для Render
@@ -27,13 +28,13 @@ flask_app = Flask(__name__)
 @flask_app.route('/')
 @flask_app.route('/health')
 def health_check():
-    return "I'm alive!", 200
+    return "✅ Bot is alive!", 200
 
 def run_flask():
     port = int(os.environ.get('PORT', 5000))
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-# Данные продуктов (без price)
+# Данные продуктов
 PRODUCTS = {
     '1': {
         'id': '1',
@@ -69,14 +70,12 @@ PRODUCTS = {
 
 # Хранилище для данных пользователей
 user_data = {}
-# Хранилище для языков
 user_languages = {}
 
 # TON адрес для оплаты
 TON_ADDRESS = "UQDKekrnvm_kJyBAYypJXxmjYG6fxsHkUs7owH0_XyTY5HsR"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Приветствие и выбор языка"""
     keyboard = [
         [
             InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru"),
@@ -90,7 +89,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def language_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка выбора языка"""
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
@@ -99,7 +97,6 @@ async def language_selection(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await show_main_menu(query, lang)
 
 async def show_main_menu(query, lang):
-    """Главное меню с услугами"""
     if lang == 'ru':
         text = "🛍️ *Выберите услугу:*"
     else:
@@ -114,7 +111,6 @@ async def show_main_menu(query, lang):
         keyboard.append([InlineKeyboardButton(label, callback_data=f"product_{product_id}")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
     await query.edit_message_text(
         text=text,
         reply_markup=reply_markup,
@@ -122,7 +118,6 @@ async def show_main_menu(query, lang):
     )
 
 async def product_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Выбор услуги - показываем предупреждение"""
     query = update.callback_query
     await query.answer()
     
@@ -130,10 +125,8 @@ async def product_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = user_languages.get(user_id, 'ru')
     product_id = query.data.split('_')[1]
     
-    # Сохраняем выбранный товар
     user_data[user_id] = {'product_id': product_id}
     
-    # Показываем предупреждение
     if lang == 'ru':
         text = (
             "⚠️ *ПРЕДУПРЕЖДЕНИЕ:*\n\n"
@@ -174,14 +167,12 @@ async def product_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def agree_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Согласие с условиями - просим оплату"""
     query = update.callback_query
     await query.answer()
     
     user_id = query.from_user.id
     lang = user_languages.get(user_id, 'ru')
     product_id = query.data.split('_')[1]
-    
     product = PRODUCTS[product_id]
     
     if lang == 'ru':
@@ -213,7 +204,6 @@ async def agree_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    # Сохраняем состояние
     user_data[user_id]['step'] = 'waiting_payment'
     
     await query.edit_message_text(
@@ -223,7 +213,6 @@ async def agree_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def disagree_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Не согласился с условиями - завершаем диалог"""
     query = update.callback_query
     await query.answer()
     
@@ -245,7 +234,6 @@ async def disagree_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def paid_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Кнопка 'Оплатил' - просим ссылку на транзакцию"""
     query = update.callback_query
     await query.answer()
     
@@ -275,12 +263,10 @@ async def paid_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка текстовых сообщений"""
     user_id = update.effective_user.id
     text = update.message.text
     lang = user_languages.get(user_id, 'ru')
     
-    # Проверяем, на каком мы шаге
     if user_id not in user_data:
         await update.message.reply_text("Нажмите /start чтобы начать")
         return
@@ -288,7 +274,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     step = user_data[user_id].get('step')
     
     if step == 'waiting_transaction':
-        # Проверяем, что ссылка на TON
         if is_ton_link(text):
             user_data[user_id]['transaction_link'] = text
             user_data[user_id]['step'] = 'waiting_promotion'
@@ -322,11 +307,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
     
     elif step == 'waiting_promotion':
-        # Сохраняем ссылку на продвижение
         user_data[user_id]['promotion_link'] = text
         user_data[user_id]['step'] = 'completed'
         
-        # Отправляем уведомление менеджеру
         await send_notification_to_manager(context, user_id)
         
         if lang == 'ru':
@@ -342,18 +325,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Thank you for choosing us! 🙏"
             )
         
-        # Очищаем данные пользователя
         del user_data[user_id]
 
 async def send_notification_to_manager(context, user_id):
-    """Отправка уведомления менеджеру"""
     try:
         product_id = user_data[user_id].get('product_id')
         product = PRODUCTS.get(product_id, {})
         transaction_link = user_data[user_id].get('transaction_link', 'Не указана')
         promotion_link = user_data[user_id].get('promotion_link', 'Не указана')
         
-        # Получаем информацию о пользователе
         user = await context.bot.get_chat(user_id)
         username = user.username or "Нет username"
         full_name = user.full_name or "Неизвестно"
@@ -379,8 +359,6 @@ async def send_notification_to_manager(context, user_id):
         logging.error(f"Ошибка отправки уведомления менеджеру: {e}")
 
 def is_ton_link(text: str) -> bool:
-    """Проверка, что ссылка ведет на сеть TON"""
-    # Список доменов TON-эксплореров
     ton_domains = [
         'tonscan.org',
         'tonviewer.com',
@@ -393,34 +371,29 @@ def is_ton_link(text: str) -> bool:
         'ton.place'
     ]
     
-    # Проверяем, что в ссылке есть хотя бы один из доменов TON
     text_lower = text.lower()
     for domain in ton_domains:
         if domain in text_lower:
             return True
     
-    # Проверяем, что ссылка начинается с http:// или https:// и содержит t.me/ton
     if text_lower.startswith('http') and ('t.me/ton' in text_lower or 'ton' in text_lower):
         return True
     
     return False
 
 async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Возврат в главное меню"""
     query = update.callback_query
     await query.answer()
     
     user_id = query.from_user.id
     lang = user_languages.get(user_id, 'ru')
     
-    # Очищаем данные пользователя
     if user_id in user_data:
         del user_data[user_id]
     
     await show_main_menu(query, lang)
 
 async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Рестарт"""
     query = update.callback_query
     await query.answer()
     
@@ -431,7 +404,6 @@ async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await start(update, context)
 
 def run_bot():
-    """Запуск бота"""
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -440,10 +412,7 @@ def run_bot():
     
     application = Application.builder().token(TOKEN).build()
     
-    # Обработчики команд
     application.add_handler(CommandHandler("start", start))
-    
-    # Обработчики callback
     application.add_handler(CallbackQueryHandler(language_selection, pattern="^lang_"))
     application.add_handler(CallbackQueryHandler(product_selected, pattern="^product_"))
     application.add_handler(CallbackQueryHandler(agree_terms, pattern="^agree_"))
@@ -451,8 +420,6 @@ def run_bot():
     application.add_handler(CallbackQueryHandler(paid_button, pattern="^paid$"))
     application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back_to_menu$"))
     application.add_handler(CallbackQueryHandler(restart, pattern="^restart$"))
-    
-    # Обработчик текстовых сообщений
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     
     print("🤖 Бот запущен!")
@@ -463,6 +430,9 @@ if __name__ == '__main__':
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     print("🌐 Веб-сервер запущен на порту " + os.environ.get('PORT', '5000'))
+    
+    # Даем время Flask запуститься
+    time.sleep(3)
     
     # Запускаем бота
     run_bot()
