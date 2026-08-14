@@ -3,7 +3,6 @@ import os
 import threading
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
-from flask import Flask
 
 # Настройка логирования
 logging.basicConfig(
@@ -11,8 +10,12 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# Токен бота (будет браться из переменной окружения)
-TOKEN = os.environ.get('TOKEN', '8945217291:AAF4yJxvu-CrFL1xP0WBa3Y8J1TOQLyH5iE')
+# Токен бота (из переменной окружения)
+TOKEN = os.environ.get('TOKEN')
+
+# Проверка: если токен не установлен, бот не запустится
+if not TOKEN:
+    raise ValueError("Токен не найден! Установите переменную окружения TOKEN")
 
 # Данные продуктов
 PRODUCTS = {
@@ -68,18 +71,6 @@ PRODUCTS = {
 
 # Хранилище для языков пользователей
 user_languages = {}
-
-# Flask-приложение для Render
-flask_app = Flask(__name__)
-
-@flask_app.route('/')
-@flask_app.route('/health')
-def health_check():
-    return "I'm alive!", 200
-
-def run_flask():
-    port = int(os.environ.get('PORT', 5000))
-    flask_app.run(host='0.0.0.0', port=port)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -210,9 +201,6 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_main_menu(query, lang)
 
 def main():
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.start()
-    
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(language_selection, pattern="^lang_"))
