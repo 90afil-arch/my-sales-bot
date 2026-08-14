@@ -4,9 +4,9 @@ import threading
 import asyncio
 import time
 import re
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from flask import Flask
 
 # Настройка логирования
 logging.basicConfig(
@@ -22,17 +22,23 @@ if not TOKEN:
 # ID менеджера
 MANAGER_ID = 781584566
 
-# Flask для Render
-flask_app = Flask(__name__)
+# Простой HTTP-сервер для Render
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/' or self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b'OK')
+        else:
+            self.send_response(404)
+            self.end_headers()
 
-@flask_app.route('/')
-@flask_app.route('/health')
-def health_check():
-    return "✅ Bot is alive!", 200
-
-def run_flask():
+def run_http_server():
     port = int(os.environ.get('PORT', 5000))
-    flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+    server = HTTPServer(('0.0.0.0', port), HealthHandler)
+    print(f"🌐 HTTP-сервер запущен на порту {port}")
+    server.serve_forever()
 
 # Данные продуктов
 PRODUCTS = {
@@ -426,13 +432,12 @@ def run_bot():
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
-    # Запускаем Flask в отдельном потоке
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    print("🌐 Веб-сервер запущен на порту " + os.environ.get('PORT', '5000'))
+    # Запускаем HTTP-сервер в отдельном потоке
+    http_thread = threading.Thread(target=run_http_server, daemon=True)
+    http_thread.start()
     
-    # Даем время Flask запуститься
-    time.sleep(3)
+    # Даем время серверу запуститься
+    time.sleep(2)
     
     # Запускаем бота
     run_bot()
