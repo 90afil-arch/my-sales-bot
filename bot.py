@@ -199,8 +199,16 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = user_languages.get(user_id, 'ru')
     await show_main_menu(query, lang)
 
+import asyncio
+
 def main():
-    # Для новой версии библиотеки Application создается чуть по-другому
+    # Для Python 3.14+ создаем event loop вручную
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(language_selection, pattern="^lang_"))
@@ -211,6 +219,3 @@ def main():
     
     print("🤖 Бот запущен!")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
-
-if __name__ == '__main__':
-    main()
