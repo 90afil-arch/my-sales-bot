@@ -1,7 +1,10 @@
 import logging
 import os
+import threading
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from flask import Flask
 
 # Настройка логирования
 logging.basicConfig(
@@ -15,6 +18,18 @@ TOKEN = os.environ.get('TOKEN')
 # Проверка: если токен не установлен, бот не запустится
 if not TOKEN:
     raise ValueError("Токен не найден! Установите переменную окружения TOKEN")
+
+# Создаем Flask-приложение для Render
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+@flask_app.route('/health')
+def health_check():
+    return "I'm alive!", 200
+
+def run_flask():
+    port = int(os.environ.get('PORT', 5000))
+    flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 # Данные продуктов
 PRODUCTS = {
@@ -199,10 +214,7 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = user_languages.get(user_id, 'ru')
     await show_main_menu(query, lang)
 
-import asyncio
-
-def main():
-    # Для Python 3.14+ создаем event loop вручную
+def run_bot():
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -219,3 +231,12 @@ def main():
     
     print("🤖 Бот запущен!")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+if __name__ == '__main__':
+    # Запускаем Flask в отдельном потоке
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    print("🌐 Веб-сервер запущен на порту " + os.environ.get('PORT', '5000'))
+    
+    # Запускаем бота в основном потоке
+    run_bot()
