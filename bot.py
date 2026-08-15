@@ -73,7 +73,6 @@ user_data = {}
 user_languages = {}
 
 # Хранилище для поддержки
-# Сохраняем соответствие: user_id -> active_support (True/False)
 support_sessions = {}
 
 # TON адрес для оплаты
@@ -279,7 +278,7 @@ async def support_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if lang == 'ru':
         text = (
-            "🆘 *Поддержка*\n\n"
+            "🆘 Поддержка\n\n"
             "Вы можете задать любой вопрос в этом чате.\n"
             "Наш оператор свяжется с вами в ближайшее время.\n\n"
             "📌 Напишите ваше сообщение ниже.\n"
@@ -288,7 +287,7 @@ async def support_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("❌ Завершить чат", callback_data="end_support")]]
     else:
         text = (
-            "🆘 *Support*\n\n"
+            "🆘 Support\n\n"
             "You can ask any question in this chat.\n"
             "Our operator will contact you shortly.\n\n"
             "📌 Write your message below.\n"
@@ -299,11 +298,10 @@ async def support_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(
         text=text,
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
+        reply_markup=reply_markup
     )
     
-    # Отправляем уведомление в группу поддержки
+    # Отправляем уведомление в группу поддержки (БЕЗ Markdown)
     user = await context.bot.get_chat(user_id)
     username = user.username or "Нет username"
     full_name = user.full_name or "Неизвестно"
@@ -311,14 +309,13 @@ async def support_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(
         chat_id=SUPPORT_GROUP_ID,
         text=(
-            f"🆕 *НОВОЕ ОБРАЩЕНИЕ В ПОДДЕРЖКУ!*\n\n"
+            f"🆕 НОВОЕ ОБРАЩЕНИЕ В ПОДДЕРЖКУ!\n\n"
             f"👤 Пользователь: {full_name}\n"
             f"🆔 ID: {user_id}\n"
             f"📛 Username: @{username}\n\n"
             f"💬 Напишите ответ на это сообщение, чтобы ответить пользователю.\n"
             f"Ваш ответ будет отправлен анонимно от имени бота."
-        ),
-        parse_mode='Markdown'
+        )
     )
 
 async def end_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -437,19 +434,18 @@ async def forward_to_support(update: Update, context: ContextTypes.DEFAULT_TYPE)
     username = user.username or "Нет username"
     full_name = user.full_name or "Неизвестно"
     
-    # Отправляем сообщение в группу поддержки
+    # Отправляем сообщение в группу поддержки (БЕЗ Markdown)
     await context.bot.send_message(
         chat_id=SUPPORT_GROUP_ID,
         text=(
-            f"💬 *Сообщение от пользователя:*\n\n"
+            f"💬 Сообщение от пользователя:\n\n"
             f"👤 {full_name} (@{username})\n"
             f"🆔 ID: {user_id}\n\n"
             f"📝 {text}\n\n"
             f"---\n"
-            f"*Чтобы ответить, просто напишите ответ на это сообщение*\n"
-            f"*в этой группе. Бот перешлет его пользователю.*"
-        ),
-        parse_mode='Markdown'
+            f"Чтобы ответить, просто напишите ответ на это сообщение\n"
+            f"в этой группе. Бот перешлет его пользователю."
+        )
     )
     
     # Подтверждение пользователю
@@ -482,12 +478,11 @@ async def handle_operator_reply(update: Update, context: ContextTypes.DEFAULT_TY
     user_id = int(match.group(1))
     operator_response = update.message.text
     
-    # Отправляем ответ пользователю
+    # Отправляем ответ пользователю (БЕЗ Markdown)
     try:
         await context.bot.send_message(
             chat_id=user_id,
-            text=f"💬 *Оператор:*\n\n{operator_response}",
-            parse_mode='Markdown'
+            text=f"💬 Оператор:\n\n{operator_response}"
         )
         
         # Подтверждение оператору
