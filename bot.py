@@ -19,8 +19,8 @@ TOKEN = os.environ.get('TOKEN')
 if not TOKEN:
     raise ValueError("Токен не найден!")
 
-# ID группы для заказов
-MANAGER_ID = -1003577549054
+# ID группы для заказов и поддержки
+SUPPORT_GROUP_ID = -1003577549054
 
 # Flask приложение
 flask_app = Flask(__name__)
@@ -72,6 +72,10 @@ PRODUCTS = {
 user_data = {}
 user_languages = {}
 
+# Хранилище для поддержки
+# Сохраняем соответствие: user_id -> active_support (True/False)
+support_sessions = {}
+
 # TON адрес для оплаты
 TON_ADDRESS = "UQDKekrnvm_kJyBAYypJXxmjYG6fxsHkUs7owH0_XyTY5HsR"
 
@@ -109,6 +113,12 @@ async def show_main_menu(query, lang):
         else:
             label = f"{product['emoji']} {product['name_en']}"
         keyboard.append([InlineKeyboardButton(label, callback_data=f"product_{product_id}")])
+    
+    # Добавляем кнопку "Связаться с поддержкой"
+    if lang == 'ru':
+        keyboard.append([InlineKeyboardButton("🆘 Связаться с поддержкой", callback_data="support")])
+    else:
+        keyboard.append([InlineKeyboardButton("🆘 Contact support", callback_data="support")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(
@@ -196,7 +206,8 @@ async def agree_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [
         [InlineKeyboardButton("✅ Оплатил / Paid", callback_data="paid")],
-        [InlineKeyboardButton("⬅️ Назад / Back", callback_data="back_to_menu")]
+        [InlineKeyboardButton("⬅️ Назад / Back", callback_data="back_to_menu")],
+        [InlineKeyboardButton("🆘 Помощь / Help", callback_data="support")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -255,6 +266,86 @@ async def paid_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text=text
     )
 
+async def support_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Кнопка 'Связаться с поддержкой'"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    lang = user_languages.get(user_id, 'ru')
+    
+    # Активируем сессию поддержки
+    support_sessions[user_id] = True
+    
+    if lang == 'ru':
+        text = (
+            "🆘 *Поддержка*\n\n"
+            "Вы можете задать любой вопрос в этом чате.\n"
+            "Наш оператор свяжется с вами в ближайшее время.\n\n"
+            "📌 Напишите ваше сообщение ниже.\n"
+            "Для завершения диалога нажмите 'Завершить чат'."
+        )
+        keyboard = [[InlineKeyboardButton("❌ Завершить чат", callback_data="end_support")]]
+    else:
+        text = (
+            "🆘 *Support*\n\n"
+            "You can ask any question in this chat.\n"
+            "Our operator will contact you shortly.\n\n"
+            "📌 Write your message below.\n"
+            "To end the conversation, press 'End chat'."
+        )
+        keyboard = [[InlineKeyboardButton("❌ End chat", callback_data="end_support")]]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        text=text,
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+    
+    # Отправляем уведомление в группу поддержки
+    user = await context.bot.get_chat(user_id)
+    username = user.username or "Нет username"
+    full_name = user.full_name or "Неизвестно"
+    
+    await context.bot.send_message(
+        chat_id=SUPPORT_GROUP_ID,
+        text=(
+            f"🆕 *НОВОЕ ОБРАЩЕНИЕ В ПОДДЕРЖКУ!*\n\n"
+            f"👤 Пользователь: {full_name}\n"
+            f"🆔 ID: {user_id}\n"
+            f"📛 Username: @{username}\n\n"
+            f"💬 Напишите ответ на это сообщение, чтобы ответить пользователю.\n"
+            f"Ваш ответ будет отправлен анонимно от имени бота."
+        ),
+        parse_mode='Markdown'
+    )
+
+async def end_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Завершение сессии поддержки"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    lang = user_languages.get(user_id, 'ru')
+    
+    # Деактивируем сессию поддержки
+    if user_id in support_sessions:
+        del support_sessions[user_id]
+    
+    if lang == 'ru':
+        text = "✅ Чат с поддержкой завершен. Если понадобится помощь - нажмите 'Связаться с поддержкой' в меню."
+    else:
+        text = "✅ Support chat ended. If you need help - press 'Contact support' in the menu."
+    
+    keyboard = [[InlineKeyboardButton("⬅️ В меню / Back to menu", callback_data="back_to_menu")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        text=text,
+        reply_markup=reply_markup
+    )
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text
@@ -262,6 +353,19 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     logging.info(f"📩 Получено сообщение от {user_id}: {text[:100]}")
     
+    # Проверяем, не является ли это ответом оператора (из группы поддержки)
+    if update.message.chat_id == SUPPORT_GROUP_ID:
+        # Это сообщение из группы поддержки
+        await handle_operator_reply(update, context)
+        return
+    
+    # Проверяем, активна ли сессия поддержки
+    if user_id in support_sessions and support_sessions[user_id]:
+        # Пользователь в режиме поддержки - пересылаем оператору
+        await forward_to_support(update, context)
+        return
+    
+    # Обычный процесс заказа
     if user_id not in user_data:
         await update.message.reply_text("Нажмите /start чтобы начать")
         return
@@ -325,10 +429,80 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         del user_data[user_id]
 
-async def send_notification_to_manager(context, user_id):
-    """Отправка уведомления в группу"""
+async def forward_to_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Пересылка сообщения от пользователя в группу поддержки"""
+    user_id = update.effective_user.id
+    text = update.message.text
+    user = await context.bot.get_chat(user_id)
+    username = user.username or "Нет username"
+    full_name = user.full_name or "Неизвестно"
+    
+    # Отправляем сообщение в группу поддержки
+    await context.bot.send_message(
+        chat_id=SUPPORT_GROUP_ID,
+        text=(
+            f"💬 *Сообщение от пользователя:*\n\n"
+            f"👤 {full_name} (@{username})\n"
+            f"🆔 ID: {user_id}\n\n"
+            f"📝 {text}\n\n"
+            f"---\n"
+            f"*Чтобы ответить, просто напишите ответ на это сообщение*\n"
+            f"*в этой группе. Бот перешлет его пользователю.*"
+        ),
+        parse_mode='Markdown'
+    )
+    
+    # Подтверждение пользователю
+    lang = user_languages.get(user_id, 'ru')
+    if lang == 'ru':
+        await update.message.reply_text("✅ Сообщение отправлено оператору. Ожидайте ответа.")
+    else:
+        await update.message.reply_text("✅ Message sent to operator. Please wait for response.")
+
+async def handle_operator_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка ответа оператора из группы поддержки"""
+    # Проверяем, что это ответ на сообщение (reply)
+    if not update.message.reply_to_message:
+        return
+    
+    # Проверяем, что сообщение, на которое отвечают, отправлено ботом
+    if update.message.reply_to_message.from_user.id != context.bot.id:
+        return
+    
+    # Извлекаем ID пользователя из текста сообщения
+    reply_text = update.message.reply_to_message.text or ""
+    
+    # Ищем ID пользователя в тексте
+    import re
+    match = re.search(r"🆔 ID: (\d+)", reply_text)
+    if not match:
+        await update.message.reply_text("❌ Не удалось определить пользователя. Сообщение должно содержать ID.")
+        return
+    
+    user_id = int(match.group(1))
+    operator_response = update.message.text
+    
+    # Отправляем ответ пользователю
     try:
-        logging.info(f"📨 Начинаем отправку уведомления в группу {MANAGER_ID}")
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=f"💬 *Оператор:*\n\n{operator_response}",
+            parse_mode='Markdown'
+        )
+        
+        # Подтверждение оператору
+        await update.message.reply_text(f"✅ Ответ отправлен пользователю (ID: {user_id})")
+        
+        # Логируем
+        logging.info(f"📨 Оператор ответил пользователю {user_id}")
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка отправки: {e}")
+
+async def send_notification_to_manager(context, user_id):
+    """Отправка уведомления о заказе в группу"""
+    try:
+        logging.info(f"📨 Начинаем отправку уведомления в группу {SUPPORT_GROUP_ID}")
         
         product_id = user_data[user_id].get('product_id')
         product = PRODUCTS.get(product_id, {})
@@ -352,19 +526,16 @@ async def send_notification_to_manager(context, user_id):
             f"📅 Дата: {__import__('datetime').datetime.now().strftime('%d.%m.%Y %H:%M')}"
         )
         
-        logging.info(f"📝 Отправляем сообщение в группу")
-        
-        # Отправляем в группу (без parse_mode)
+        # Отправляем в группу
         await context.bot.send_message(
-            chat_id=MANAGER_ID,
+            chat_id=SUPPORT_GROUP_ID,
             text=message
         )
         
-        logging.info(f"✅ Уведомление успешно отправлено в группу {MANAGER_ID}")
+        logging.info(f"✅ Уведомление успешно отправлено в группу {SUPPORT_GROUP_ID}")
         
     except Exception as e:
         logging.error(f"❌ ОШИБКА отправки уведомления в группу: {e}")
-        logging.error(f"❌ Тип ошибки: {type(e).__name__}")
 
 def is_ton_link(text: str) -> bool:
     ton_domains = [
@@ -408,20 +579,29 @@ async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     if user_id in user_data:
         del user_data[user_id]
+    if user_id in support_sessions:
+        del support_sessions[user_id]
     
     await start(update, context)
 
 def main():
     application = Application.builder().token(TOKEN).build()
     
+    # Обработчики команд
     application.add_handler(CommandHandler("start", start))
+    
+    # Обработчики callback
     application.add_handler(CallbackQueryHandler(language_selection, pattern="^lang_"))
     application.add_handler(CallbackQueryHandler(product_selected, pattern="^product_"))
     application.add_handler(CallbackQueryHandler(agree_terms, pattern="^agree_"))
     application.add_handler(CallbackQueryHandler(disagree_terms, pattern="^disagree$"))
     application.add_handler(CallbackQueryHandler(paid_button, pattern="^paid$"))
+    application.add_handler(CallbackQueryHandler(support_button, pattern="^support$"))
+    application.add_handler(CallbackQueryHandler(end_support, pattern="^end_support$"))
     application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back_to_menu$"))
     application.add_handler(CallbackQueryHandler(restart, pattern="^restart$"))
+    
+    # Обработчик текстовых сообщений (для всех чатов)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     
     print("🤖 Бот запущен!")
