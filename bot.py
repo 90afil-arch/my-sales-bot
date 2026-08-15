@@ -20,7 +20,7 @@ if not TOKEN:
     raise ValueError("Токен не найден!")
 
 # ID менеджера
-MANAGER_ID = 781584566
+MANAGER_ID = -1003577549054
 
 # Простой HTTP-сервер для Render
 class HealthHandler(BaseHTTPRequestHandler):
