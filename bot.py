@@ -98,9 +98,9 @@ async def language_selection(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def show_main_menu(query, lang):
     if lang == 'ru':
-        text = "🛍️ *Выберите услугу:*"
+        text = "🛍️ Выберите услугу:"
     else:
-        text = "🛍️ *Select a service:*"
+        text = "🛍️ Select a service:"
     
     keyboard = []
     for product_id, product in PRODUCTS.items():
@@ -113,8 +113,7 @@ async def show_main_menu(query, lang):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(
         text=text,
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
+        reply_markup=reply_markup
     )
 
 async def product_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -129,7 +128,7 @@ async def product_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if lang == 'ru':
         text = (
-            "⚠️ *ПРЕДУПРЕЖДЕНИЕ:*\n\n"
+            "⚠️ ПРЕДУПРЕЖДЕНИЕ:\n\n"
             "Запрещается:\n"
             "• Вредоносные ссылки\n"
             "• Сайты с порнографией и видео 18+\n"
@@ -141,7 +140,7 @@ async def product_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         text = (
-            "⚠️ *WARNING:*\n\n"
+            "⚠️ WARNING:\n\n"
             "Prohibited:\n"
             "• Malicious links\n"
             "• Sites with pornography and 18+ video\n"
@@ -162,8 +161,7 @@ async def product_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(
         text=text,
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
+        reply_markup=reply_markup
     )
 
 async def agree_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -177,22 +175,20 @@ async def agree_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if lang == 'ru':
         text = (
-            f"💳 *Оплата*\n\n"
+            f"💳 Оплата\n\n"
             f"Товар: {product['name_ru']}\n\n"
-            f"Переведите оплату на TON адрес:\n"
-            f"`{TON_ADDRESS}`\n\n"
-            f"📌 *После оплаты:*\n"
+            f"Переведите оплату на TON адрес:\n{TON_ADDRESS}\n\n"
+            f"📌 После оплаты:\n"
             f"1️⃣ Нажмите кнопку '✅ Оплатил'\n"
             f"2️⃣ Пришлите ссылку на транзакцию (TON)\n"
             f"3️⃣ Пришлите ссылку для продвижения"
         )
     else:
         text = (
-            f"💳 *Payment*\n\n"
+            f"💳 Payment\n\n"
             f"Product: {product['name_en']}\n\n"
-            f"Send payment to TON address:\n"
-            f"`{TON_ADDRESS}`\n\n"
-            f"📌 *After payment:*\n"
+            f"Send payment to TON address:\n{TON_ADDRESS}\n\n"
+            f"📌 After payment:\n"
             f"1️⃣ Press '✅ Paid'\n"
             f"2️⃣ Send transaction link (TON)\n"
             f"3️⃣ Send promotion link"
@@ -208,8 +204,7 @@ async def agree_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(
         text=text,
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
+        reply_markup=reply_markup
     )
 
 async def disagree_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -229,8 +224,7 @@ async def disagree_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(
         text=text,
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
+        reply_markup=reply_markup
     )
 
 async def paid_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -242,24 +236,23 @@ async def paid_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if lang == 'ru':
         text = (
-            "📎 *Отправьте ссылку на транзакцию TON*\n\n"
+            "📎 Отправьте ссылку на транзакцию TON\n\n"
             "Пример: https://tonscan.org/tx/...\n"
             "Или ссылку из кошелька TON\n\n"
-            "ℹ️ Бот проверит, что ссылка ведет на сеть TON"
+            "Бот проверит, что ссылка ведет на сеть TON"
         )
     else:
         text = (
-            "📎 *Send TON transaction link*\n\n"
+            "📎 Send TON transaction link\n\n"
             "Example: https://tonscan.org/tx/...\n"
             "Or link from TON wallet\n\n"
-            "ℹ️ Bot will check that the link is on TON network"
+            "Bot will check that the link is on TON network"
         )
     
     user_data[user_id]['step'] = 'waiting_transaction'
     
     await query.edit_message_text(
-        text=text,
-        parse_mode='Markdown'
+        text=text
     )
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -283,18 +276,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if lang == 'ru':
                 await update.message.reply_text(
                     "✅ Ссылка на транзакцию принята!\n\n"
-                    "📎 *Теперь отправьте ссылку для продвижения:*\n"
+                    "📎 Теперь отправьте ссылку для продвижения:\n"
                     "Пример: https://t.me/your_channel/123\n"
-                    "Или ссылку на сайт/видео",
-                    parse_mode='Markdown'
+                    "Или ссылку на сайт/видео"
                 )
             else:
                 await update.message.reply_text(
                     "✅ Transaction link accepted!\n\n"
-                    "📎 *Now send promotion link:*\n"
+                    "📎 Now send promotion link:\n"
                     "Example: https://t.me/your_channel/123\n"
-                    "Or website/video link",
-                    parse_mode='Markdown'
+                    "Or website/video link"
                 )
         else:
             if lang == 'ru':
@@ -321,17 +312,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if lang == 'ru':
             await update.message.reply_text(
-                "✅ *Заявка отправлена на модерацию!*\n\n"
+                "✅ Заявка отправлена на модерацию!\n\n"
                 "📋 Ваше продвижение будет опубликовано в течение 1-7 рабочих дней.\n\n"
-                "Спасибо, что выбрали нас! 🙏",
-                parse_mode='Markdown'
+                "Спасибо, что выбрали нас! 🙏"
             )
         else:
             await update.message.reply_text(
-                "✅ *Application sent for moderation!*\n\n"
+                "✅ Application sent for moderation!\n\n"
                 "📋 Your promotion will be published within 1-7 business days.\n\n"
-                "Thank you for choosing us! 🙏",
-                parse_mode='Markdown'
+                "Thank you for choosing us! 🙏"
             )
         
         del user_data[user_id]
@@ -351,7 +340,7 @@ async def send_notification_to_manager(context, user_id):
         username = user.username or "Нет username"
         full_name = user.full_name or "Неизвестно"
         
-        # Сообщение (простой текст)
+        # Сообщение (простой текст, без Markdown)
         message = (
             f"🆕 НОВЫЙ ЗАКАЗ!\n\n"
             f"👤 Пользователь: {full_name}\n"
@@ -365,7 +354,7 @@ async def send_notification_to_manager(context, user_id):
         
         logging.info(f"📝 Отправляем сообщение в группу")
         
-        # Отправляем в группу
+        # Отправляем в группу (без parse_mode)
         await context.bot.send_message(
             chat_id=MANAGER_ID,
             text=message
