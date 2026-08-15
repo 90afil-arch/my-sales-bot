@@ -1,10 +1,10 @@
 import logging
 import os
-import threading
 import asyncio
-import time
 import re
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import time
+import threading
+from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
@@ -19,26 +19,20 @@ TOKEN = os.environ.get('TOKEN')
 if not TOKEN:
     raise ValueError("Токен не найден!")
 
-# ID менеджера
+# ID группы для заказов
 MANAGER_ID = -1003577549054
 
-# Простой HTTP-сервер для Render
-class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == '/' or self.path == '/health':
-            self.send_response(200)
-            self.send_header('Content-type', 'text/plain')
-            self.end_headers()
-            self.wfile.write(b'OK')
-        else:
-            self.send_response(404)
-            self.end_headers()
+# Flask приложение
+flask_app = Flask(__name__)
 
-def run_http_server():
+@flask_app.route('/')
+@flask_app.route('/health')
+def health_check():
+    return "OK", 200
+
+def run_flask():
     port = int(os.environ.get('PORT', 5000))
-    server = HTTPServer(('0.0.0.0', port), HealthHandler)
-    print(f"🌐 HTTP-сервер запущен на порту {port}")
-    server.serve_forever()
+    flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 # Данные продуктов
 PRODUCTS = {
@@ -273,6 +267,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     lang = user_languages.get(user_id, 'ru')
     
+    logging.info(f"📩 Получено сообщение от {user_id}: {text[:100]}")
+    
     if user_id not in user_data:
         await update.message.reply_text("Нажмите /start чтобы начать")
         return
@@ -289,14 +285,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "✅ Ссылка на транзакцию принята!\n\n"
                     "📎 *Теперь отправьте ссылку для продвижения:*\n"
                     "Пример: https://t.me/your_channel/123\n"
-                    "Или ссылку на сайт/видео"
+                    "Или ссылку на сайт/видео",
+                    parse_mode='Markdown'
                 )
             else:
                 await update.message.reply_text(
                     "✅ Transaction link accepted!\n\n"
                     "📎 *Now send promotion link:*\n"
                     "Example: https://t.me/your_channel/123\n"
-                    "Or website/video link"
+                    "Or website/video link",
+                    parse_mode='Markdown'
                 )
         else:
             if lang == 'ru':
@@ -316,36 +314,46 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data[user_id]['promotion_link'] = text
         user_data[user_id]['step'] = 'completed'
         
+        logging.info(f"📦 Заказ от {user_id}: {user_data[user_id]}")
+        
+        # Отправляем уведомление в группу
         await send_notification_to_manager(context, user_id)
         
         if lang == 'ru':
             await update.message.reply_text(
                 "✅ *Заявка отправлена на модерацию!*\n\n"
                 "📋 Ваше продвижение будет опубликовано в течение 1-7 рабочих дней.\n\n"
-                "Спасибо, что выбрали нас! 🙏"
+                "Спасибо, что выбрали нас! 🙏",
+                parse_mode='Markdown'
             )
         else:
             await update.message.reply_text(
                 "✅ *Application sent for moderation!*\n\n"
                 "📋 Your promotion will be published within 1-7 business days.\n\n"
-                "Thank you for choosing us! 🙏"
+                "Thank you for choosing us! 🙏",
+                parse_mode='Markdown'
             )
         
         del user_data[user_id]
 
 async def send_notification_to_manager(context, user_id):
+    """Отправка уведомления в группу"""
     try:
+        logging.info(f"📨 Начинаем отправку уведомления в группу {MANAGER_ID}")
+        
         product_id = user_data[user_id].get('product_id')
         product = PRODUCTS.get(product_id, {})
         transaction_link = user_data[user_id].get('transaction_link', 'Не указана')
         promotion_link = user_data[user_id].get('promotion_link', 'Не указана')
         
+        # Получаем информацию о пользователе
         user = await context.bot.get_chat(user_id)
         username = user.username or "Нет username"
         full_name = user.full_name or "Неизвестно"
         
+        # Сообщение (простой текст)
         message = (
-            f"🆕 *НОВЫЙ ЗАКАЗ!*\n\n"
+            f"🆕 НОВЫЙ ЗАКАЗ!\n\n"
             f"👤 Пользователь: {full_name}\n"
             f"🆔 ID: {user_id}\n"
             f"📛 Username: @{username}\n"
@@ -355,14 +363,19 @@ async def send_notification_to_manager(context, user_id):
             f"📅 Дата: {__import__('datetime').datetime.now().strftime('%d.%m.%Y %H:%M')}"
         )
         
+        logging.info(f"📝 Отправляем сообщение в группу")
+        
+        # Отправляем в группу
         await context.bot.send_message(
             chat_id=MANAGER_ID,
-            text=message,
-            parse_mode='Markdown'
+            text=message
         )
         
+        logging.info(f"✅ Уведомление успешно отправлено в группу {MANAGER_ID}")
+        
     except Exception as e:
-        logging.error(f"Ошибка отправки уведомления менеджеру: {e}")
+        logging.error(f"❌ ОШИБКА отправки уведомления в группу: {e}")
+        logging.error(f"❌ Тип ошибки: {type(e).__name__}")
 
 def is_ton_link(text: str) -> bool:
     ton_domains = [
@@ -409,13 +422,7 @@ async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await start(update, context)
 
-def run_bot():
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    
+def main():
     application = Application.builder().token(TOKEN).build()
     
     application.add_handler(CommandHandler("start", start))
@@ -432,12 +439,13 @@ def run_bot():
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
-    # Запускаем HTTP-сервер в отдельном потоке
-    http_thread = threading.Thread(target=run_http_server, daemon=True)
-    http_thread.start()
+    # Запускаем Flask в отдельном потоке
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    print(f"🌐 Веб-сервер запущен на порту {os.environ.get('PORT', 5000)}")
     
-    # Даем время серверу запуститься
+    # Даем время Flask запуститься
     time.sleep(2)
     
     # Запускаем бота
-    run_bot()
+    main()
