@@ -78,6 +78,29 @@ support_sessions = {}
 # TON адрес для оплаты
 TON_ADDRESS = "UQDKekrnvm_kJyBAYypJXxmjYG6fxsHkUs7owH0_XyTY5HsR"
 
+# ==================== ФУНКЦИЯ РАСЧЁТА ЦЕНЫ ====================
+def calculate_price(views):
+    """
+    Расчёт цены в зависимости от количества просмотров.
+    Возвращает итоговую цену (целое число) и процент скидки.
+    """
+    base_price = views  # 1 просмотр = 1 рубль
+    if views >= 24000:
+        discount = 0.5
+    elif views >= 20000:
+        discount = 0.4
+    elif views >= 16000:
+        discount = 0.3
+    elif views >= 12000:
+        discount = 0.2
+    elif views >= 8000:
+        discount = 0.1
+    else:
+        discount = 0.0
+    final_price = base_price * (1 - discount)
+    return int(final_price), discount * 100
+
+# ==================== ОБРАБОТЧИКИ КОМАНД И CALLBACK ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [
@@ -101,9 +124,9 @@ async def language_selection(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def show_main_menu(query, lang):
     if lang == 'ru':
-        text = "🛍️ Выберите услугу:"
+        text = "🛍️ Выберите услугу или введите своё количество:"
     else:
-        text = "🛍️ Select a service:"
+        text = "🛍️ Select a service or enter your own quantity:"
     
     keyboard = []
     for product_id, product in PRODUCTS.items():
@@ -113,10 +136,12 @@ async def show_main_menu(query, lang):
             label = f"{product['emoji']} {product['name_en']}"
         keyboard.append([InlineKeyboardButton(label, callback_data=f"product_{product_id}")])
     
-    # Добавляем кнопку "Связаться с поддержкой"
+    # Кнопка "Ввести своё количество"
     if lang == 'ru':
+        keyboard.append([InlineKeyboardButton("✏️ Ввести своё количество", callback_data="custom_amount")])
         keyboard.append([InlineKeyboardButton("🆘 Связаться с поддержкой", callback_data="support")])
     else:
+        keyboard.append([InlineKeyboardButton("✏️ Enter custom quantity", callback_data="custom_amount")])
         keyboard.append([InlineKeyboardButton("🆘 Contact support", callback_data="support")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -125,6 +150,7 @@ async def show_main_menu(query, lang):
         reply_markup=reply_markup
     )
 
+# ==================== ОБРАБОТКА ВЫБОРА ПРОДУКТА ====================
 async def product_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -167,7 +193,6 @@ async def product_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
     await query.edit_message_text(
         text=text,
         reply_markup=reply_markup
@@ -265,84 +290,33 @@ async def paid_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text=text
     )
 
-async def support_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Кнопка 'Связаться с поддержкой'"""
+# ==================== КНОПКА "ВВЕСТИ СВОЁ КОЛИЧЕСТВО" ====================
+async def custom_amount_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     user_id = query.from_user.id
     lang = user_languages.get(user_id, 'ru')
     
-    # Активируем сессию поддержки
-    support_sessions[user_id] = True
+    # Устанавливаем состояние ожидания ввода
+    user_data[user_id] = {'step': 'waiting_custom_amount'}
     
     if lang == 'ru':
         text = (
-            "🆘 Поддержка\n\n"
-            "Вы можете задать любой вопрос в этом чате.\n"
-            "Наш оператор свяжется с вами в ближайшее время.\n\n"
-            "📌 Напишите ваше сообщение ниже.\n"
-            "Для завершения диалога нажмите 'Завершить чат'."
+            "📝 Введите желаемое количество просмотров.\n\n"
+            "⚠️ Только целые тысячи (кратные 1000).\n"
+            "Примеры: 5000, 10000, 25000"
         )
-        keyboard = [[InlineKeyboardButton("❌ Завершить чат", callback_data="end_support")]]
     else:
         text = (
-            "🆘 Support\n\n"
-            "You can ask any question in this chat.\n"
-            "Our operator will contact you shortly.\n\n"
-            "📌 Write your message below.\n"
-            "To end the conversation, press 'End chat'."
+            "📝 Enter the desired number of views.\n\n"
+            "⚠️ Only whole thousands (multiples of 1000).\n"
+            "Examples: 5000, 10000, 25000"
         )
-        keyboard = [[InlineKeyboardButton("❌ End chat", callback_data="end_support")]]
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(
-        text=text,
-        reply_markup=reply_markup
-    )
-    
-    # Отправляем уведомление в группу поддержки (БЕЗ Markdown)
-    user = await context.bot.get_chat(user_id)
-    username = user.username or "Нет username"
-    full_name = user.full_name or "Неизвестно"
-    
-    await context.bot.send_message(
-        chat_id=SUPPORT_GROUP_ID,
-        text=(
-            f"🆕 НОВОЕ ОБРАЩЕНИЕ В ПОДДЕРЖКУ!\n\n"
-            f"👤 Пользователь: {full_name}\n"
-            f"🆔 ID: {user_id}\n"
-            f"📛 Username: @{username}\n\n"
-            f"💬 Напишите ответ на это сообщение, чтобы ответить пользователю.\n"
-            f"Ваш ответ будет отправлен анонимно от имени бота."
-        )
-    )
+    await query.edit_message_text(text=text)
 
-async def end_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Завершение сессии поддержки"""
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = query.from_user.id
-    lang = user_languages.get(user_id, 'ru')
-    
-    # Деактивируем сессию поддержки
-    if user_id in support_sessions:
-        del support_sessions[user_id]
-    
-    if lang == 'ru':
-        text = "✅ Чат с поддержкой завершен. Если понадобится помощь - нажмите 'Связаться с поддержкой' в меню."
-    else:
-        text = "✅ Support chat ended. If you need help - press 'Contact support' in the menu."
-    
-    keyboard = [[InlineKeyboardButton("⬅️ В меню / Back to menu", callback_data="back_to_menu")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        text=text,
-        reply_markup=reply_markup
-    )
-
+# ==================== ОСНОВНОЙ ОБРАБОТЧИК ТЕКСТОВЫХ СООБЩЕНИЙ ====================
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text
@@ -350,25 +324,78 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     logging.info(f"📩 Получено сообщение от {user_id}: {text[:100]}")
     
-    # Проверяем, не является ли это ответом оператора (из группы поддержки)
+    # 1. Если сообщение из группы поддержки — это ответ оператора
     if update.message.chat_id == SUPPORT_GROUP_ID:
-        # Это сообщение из группы поддержки
         await handle_operator_reply(update, context)
         return
     
-    # Проверяем, активна ли сессия поддержки
+    # 2. Если активна сессия поддержки — пересылаем в группу
     if user_id in support_sessions and support_sessions[user_id]:
-        # Пользователь в режиме поддержки - пересылаем оператору
         await forward_to_support(update, context)
         return
     
-    # Обычный процесс заказа
+    # 3. Проверка, ожидаем ли ввод пользовательского количества
+    if user_id in user_data and user_data[user_id].get('step') == 'waiting_custom_amount':
+        # Проверяем, что введено целое число, кратное 1000, > 0
+        try:
+            views = int(text)
+            if views <= 0 or views % 1000 != 0:
+                raise ValueError
+        except ValueError:
+            if lang == 'ru':
+                await update.message.reply_text(
+                    "❌ Ошибка! Введите целое число, кратное 1000 (например, 5000, 10000). Попробуйте снова."
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ Error! Enter a whole number multiple of 1000 (e.g., 5000, 10000). Try again."
+                )
+            return
+        
+        # Расчёт цены
+        final_price, discount_percent = calculate_price(views)
+        
+        # Сохраняем данные
+        user_data[user_id]['custom_views'] = views
+        user_data[user_id]['custom_price'] = final_price
+        user_data[user_id]['step'] = 'custom_price_shown'
+        
+        # Формируем сообщение с ценой
+        if lang == 'ru':
+            text_msg = (
+                f"📊 Количество просмотров: {views}\n"
+                f"💰 Цена: {final_price} руб.\n"
+                f"🎁 Скидка: {discount_percent:.0f}%\n\n"
+                f"Оформить заказ?"
+            )
+            keyboard = [
+                [InlineKeyboardButton("✅ Оформить заказ", callback_data="custom_order")],
+                [InlineKeyboardButton("⬅️ Назад в меню", callback_data="back_to_menu")]
+            ]
+        else:
+            text_msg = (
+                f"📊 Views: {views}\n"
+                f"💰 Price: {final_price} RUB\n"
+                f"🎁 Discount: {discount_percent:.0f}%\n\n"
+                f"Place an order?"
+            )
+            keyboard = [
+                [InlineKeyboardButton("✅ Place order", callback_data="custom_order")],
+                [InlineKeyboardButton("⬅️ Back to menu", callback_data="back_to_menu")]
+            ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(text_msg, reply_markup=reply_markup)
+        return
+    
+    # 4. Если пользователь не в процессе заказа — предлагаем /start
     if user_id not in user_data:
         await update.message.reply_text("Нажмите /start чтобы начать")
         return
     
     step = user_data[user_id].get('step')
     
+    # 5. Обработка шага "ссылка на транзакцию"
     if step == 'waiting_transaction':
         if is_ton_link(text):
             user_data[user_id]['transaction_link'] = text
@@ -402,6 +429,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Example: https://tonscan.org/tx/..."
                 )
     
+    # 6. Обработка шага "ссылка для продвижения"
     elif step == 'waiting_promotion':
         user_data[user_id]['promotion_link'] = text
         user_data[user_id]['step'] = 'completed'
@@ -418,7 +446,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "📋 Ваше продвижение будет опубликовано в течение 1-7 рабочих дней.\n\n"
                 "Спасибо, что выбрали нас! 🙏"
             )
-            # Проверяем, является ли ссылка на Telegram канал/группу
             if 't.me' in text or 'telegram' in text.lower():
                 success_msg += (
                     "\n\n📌 Важное дополнение:\n"
@@ -442,17 +469,202 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await update.message.reply_text(success_msg)
         
+        # Удаляем данные пользователя, кроме поддержки (если активна)
         del user_data[user_id]
 
+# ==================== КНОПКА "ОФОРМИТЬ ЗАКАЗ" ДЛЯ КАСТОМНОГО КОЛИЧЕСТВА ====================
+async def custom_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    lang = user_languages.get(user_id, 'ru')
+    
+    # Проверяем, что есть данные кастомного заказа
+    if user_id not in user_data or user_data[user_id].get('step') != 'custom_price_shown':
+        await query.edit_message_text("❌ Ошибка. Начните заказ заново через /start")
+        return
+    
+    # Сохраняем данные как обычный заказ (используем временный product_id = "custom")
+    user_data[user_id]['product_id'] = 'custom'
+    user_data[user_id]['custom_name'] = f"{user_data[user_id]['custom_views']} просмотров"
+    user_data[user_id]['custom_price'] = user_data[user_id]['custom_price']
+    
+    # Теперь показываем предупреждение (как при выборе продукта)
+    if lang == 'ru':
+        text = (
+            "⚠️ ПРЕДУПРЕЖДЕНИЕ:\n\n"
+            "Запрещается:\n"
+            "• Вредоносные ссылки\n"
+            "• Сайты с порнографией и видео 18+\n"
+            "• Сайты, продающие наркотики, оружие или другие запретные материалы\n\n"
+            "Каждая ссылка будет проверена вручную модераторами.\n"
+            "Нарушающие правила ссылки не будут показаны в приложении.\n"
+            "Оплата не будет возвращена.\n\n"
+            "Вы согласны с условием?"
+        )
+    else:
+        text = (
+            "⚠️ WARNING:\n\n"
+            "Prohibited:\n"
+            "• Malicious links\n"
+            "• Sites with pornography and 18+ video\n"
+            "• Sites selling drugs, weapons or other prohibited materials\n\n"
+            "Each link will be manually checked by moderators.\n"
+            "Violating links will not be shown in the app.\n"
+            "Payment will not be refunded.\n\n"
+            "Do you agree to the terms?"
+        )
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Да / Yes", callback_data="agree_custom"),
+            InlineKeyboardButton("❌ Нет / No", callback_data="disagree")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        text=text,
+        reply_markup=reply_markup
+    )
+
+async def agree_custom_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    lang = user_languages.get(user_id, 'ru')
+    
+    # Проверяем, что есть данные кастомного заказа
+    if user_id not in user_data:
+        await query.edit_message_text("❌ Ошибка. Начните заказ заново через /start")
+        return
+    
+    # Получаем данные
+    views = user_data[user_id].get('custom_views')
+    price = user_data[user_id].get('custom_price')
+    
+    if lang == 'ru':
+        text = (
+            f"💳 Оплата\n\n"
+            f"Товар: {views} просмотров\n"
+            f"Цена: {price} руб.\n\n"
+            f"Переведите оплату на TON адрес:\n{TON_ADDRESS}\n\n"
+            f"📌 После оплаты:\n"
+            f"1️⃣ Нажмите кнопку '✅ Оплатил'\n"
+            f"2️⃣ Пришлите ссылку на транзакцию (TON)\n"
+            f"3️⃣ Пришлите ссылку для продвижения"
+        )
+    else:
+        text = (
+            f"💳 Payment\n\n"
+            f"Product: {views} views\n"
+            f"Price: {price} RUB\n\n"
+            f"Send payment to TON address:\n{TON_ADDRESS}\n\n"
+            f"📌 After payment:\n"
+            f"1️⃣ Press '✅ Paid'\n"
+            f"2️⃣ Send transaction link (TON)\n"
+            f"3️⃣ Send promotion link"
+        )
+    
+    keyboard = [
+        [InlineKeyboardButton("✅ Оплатил / Paid", callback_data="paid")],
+        [InlineKeyboardButton("⬅️ Назад / Back", callback_data="back_to_menu")],
+        [InlineKeyboardButton("🆘 Помощь / Help", callback_data="support")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    user_data[user_id]['step'] = 'waiting_payment'
+    
+    await query.edit_message_text(
+        text=text,
+        reply_markup=reply_markup
+    )
+
+# ==================== ПОДДЕРЖКА ====================
+async def support_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    lang = user_languages.get(user_id, 'ru')
+    
+    support_sessions[user_id] = True
+    
+    if lang == 'ru':
+        text = (
+            "🆘 Поддержка\n\n"
+            "Вы можете задать любой вопрос в этом чате.\n"
+            "Наш оператор свяжется с вами в ближайшее время.\n\n"
+            "📌 Напишите ваше сообщение ниже.\n"
+            "Для завершения диалога нажмите 'Завершить чат'."
+        )
+        keyboard = [[InlineKeyboardButton("❌ Завершить чат", callback_data="end_support")]]
+    else:
+        text = (
+            "🆘 Support\n\n"
+            "You can ask any question in this chat.\n"
+            "Our operator will contact you shortly.\n\n"
+            "📌 Write your message below.\n"
+            "To end the conversation, press 'End chat'."
+        )
+        keyboard = [[InlineKeyboardButton("❌ End chat", callback_data="end_support")]]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        text=text,
+        reply_markup=reply_markup
+    )
+    
+    # Уведомление в группу
+    user = await context.bot.get_chat(user_id)
+    username = user.username or "Нет username"
+    full_name = user.full_name or "Неизвестно"
+    
+    await context.bot.send_message(
+        chat_id=SUPPORT_GROUP_ID,
+        text=(
+            f"🆕 НОВОЕ ОБРАЩЕНИЕ В ПОДДЕРЖКУ!\n\n"
+            f"👤 Пользователь: {full_name}\n"
+            f"🆔 ID: {user_id}\n"
+            f"📛 Username: @{username}\n\n"
+            f"💬 Напишите ответ на это сообщение, чтобы ответить пользователю.\n"
+            f"Ваш ответ будет отправлен анонимно от имени бота."
+        )
+    )
+
+async def end_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    lang = user_languages.get(user_id, 'ru')
+    
+    if user_id in support_sessions:
+        del support_sessions[user_id]
+    
+    if lang == 'ru':
+        text = "✅ Чат с поддержкой завершен. Если понадобится помощь - нажмите 'Связаться с поддержкой' в меню."
+    else:
+        text = "✅ Support chat ended. If you need help - press 'Contact support' in the menu."
+    
+    keyboard = [[InlineKeyboardButton("⬅️ В меню / Back to menu", callback_data="back_to_menu")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        text=text,
+        reply_markup=reply_markup
+    )
+
+# ==================== ПЕРЕСЫЛКА В ГРУППУ ПОДДЕРЖКИ ====================
 async def forward_to_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Пересылка сообщения от пользователя в группу поддержки"""
     user_id = update.effective_user.id
     text = update.message.text
     user = await context.bot.get_chat(user_id)
     username = user.username or "Нет username"
     full_name = user.full_name or "Неизвестно"
     
-    # Отправляем сообщение в группу поддержки (БЕЗ Markdown)
     await context.bot.send_message(
         chat_id=SUPPORT_GROUP_ID,
         text=(
@@ -466,28 +678,21 @@ async def forward_to_support(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
     )
     
-    # Подтверждение пользователю
     lang = user_languages.get(user_id, 'ru')
     if lang == 'ru':
         await update.message.reply_text("✅ Сообщение отправлено оператору. Ожидайте ответа.")
     else:
         await update.message.reply_text("✅ Message sent to operator. Please wait for response.")
 
+# ==================== ОТВЕТ ОПЕРАТОРА ====================
 async def handle_operator_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка ответа оператора из группы поддержки"""
-    # Проверяем, что это ответ на сообщение (reply)
     if not update.message.reply_to_message:
         return
     
-    # Проверяем, что сообщение, на которое отвечают, отправлено ботом
     if update.message.reply_to_message.from_user.id != context.bot.id:
         return
     
-    # Извлекаем ID пользователя из текста сообщения
     reply_text = update.message.reply_to_message.text or ""
-    
-    # Ищем ID пользователя в тексте
-    import re
     match = re.search(r"🆔 ID: (\d+)", reply_text)
     if not match:
         await update.message.reply_text("❌ Не удалось определить пользователя. Сообщение должно содержать ID.")
@@ -496,50 +701,52 @@ async def handle_operator_reply(update: Update, context: ContextTypes.DEFAULT_TY
     user_id = int(match.group(1))
     operator_response = update.message.text
     
-    # Отправляем ответ пользователю (БЕЗ Markdown)
     try:
         await context.bot.send_message(
             chat_id=user_id,
             text=f"💬 Оператор:\n\n{operator_response}"
         )
-        
-        # Подтверждение оператору
         await update.message.reply_text(f"✅ Ответ отправлен пользователю (ID: {user_id})")
-        
-        # Логируем
         logging.info(f"📨 Оператор ответил пользователю {user_id}")
-        
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка отправки: {e}")
 
+# ==================== УВЕДОМЛЕНИЕ О ЗАКАЗЕ ====================
 async def send_notification_to_manager(context, user_id):
-    """Отправка уведомления о заказе в группу"""
     try:
         logging.info(f"📨 Начинаем отправку уведомления в группу {SUPPORT_GROUP_ID}")
         
         product_id = user_data[user_id].get('product_id')
-        product = PRODUCTS.get(product_id, {})
+        if product_id == 'custom':
+            # Кастомный заказ
+            views = user_data[user_id].get('custom_views')
+            price = user_data[user_id].get('custom_price')
+            product_name = f"{views} просмотров (кастом)"
+            product_price = f"{price} руб."
+        else:
+            product = PRODUCTS.get(product_id, {})
+            product_name = product.get('name_ru', 'Неизвестно')
+            product_price = product.get('price', 'Неизвестно')
+        
         transaction_link = user_data[user_id].get('transaction_link', 'Не указана')
         promotion_link = user_data[user_id].get('promotion_link', 'Не указана')
         
-        # Получаем информацию о пользователе
         user = await context.bot.get_chat(user_id)
         username = user.username or "Нет username"
         full_name = user.full_name or "Неизвестно"
         
-        # Сообщение (простой текст, без Markdown)
         message = (
             f"🆕 НОВЫЙ ЗАКАЗ!\n\n"
             f"👤 Пользователь: {full_name}\n"
             f"🆔 ID: {user_id}\n"
             f"📛 Username: @{username}\n"
-            f"📦 Услуга: {product.get('name_ru', 'Неизвестно')}\n\n"
+            f"📦 Услуга: {product_name}\n"
+            f"💰 Цена: {product_price}\n\n"
             f"🔗 Ссылка на транзакцию:\n{transaction_link}\n\n"
             f"🔗 Ссылка для продвижения:\n{promotion_link}\n\n"
             f"📅 Дата: {__import__('datetime').datetime.now().strftime('%d.%m.%Y %H:%M')}"
         )
         
-        # Отправляем в группу
         await context.bot.send_message(
             chat_id=SUPPORT_GROUP_ID,
             text=message
@@ -550,6 +757,7 @@ async def send_notification_to_manager(context, user_id):
     except Exception as e:
         logging.error(f"❌ ОШИБКА отправки уведомления в группу: {e}")
 
+# ==================== ПРОВЕРКА TON ССЫЛКИ ====================
 def is_ton_link(text: str) -> bool:
     ton_domains = [
         'tonscan.org',
@@ -562,17 +770,15 @@ def is_ton_link(text: str) -> bool:
         'ton.run',
         'ton.place'
     ]
-    
     text_lower = text.lower()
     for domain in ton_domains:
         if domain in text_lower:
             return True
-    
     if text_lower.startswith('http') and ('t.me/ton' in text_lower or 'ton' in text_lower):
         return True
-    
     return False
 
+# ==================== НАЗАД В МЕНЮ И РЕСТАРТ ====================
 async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -597,37 +803,33 @@ async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await start(update, context)
 
+# ==================== ЗАПУСК БОТА ====================
 def main():
     application = Application.builder().token(TOKEN).build()
     
-    # Обработчики команд
     application.add_handler(CommandHandler("start", start))
     
-    # Обработчики callback
     application.add_handler(CallbackQueryHandler(language_selection, pattern="^lang_"))
     application.add_handler(CallbackQueryHandler(product_selected, pattern="^product_"))
     application.add_handler(CallbackQueryHandler(agree_terms, pattern="^agree_"))
     application.add_handler(CallbackQueryHandler(disagree_terms, pattern="^disagree$"))
     application.add_handler(CallbackQueryHandler(paid_button, pattern="^paid$"))
+    application.add_handler(CallbackQueryHandler(custom_amount_selected, pattern="^custom_amount$"))
+    application.add_handler(CallbackQueryHandler(custom_order, pattern="^custom_order$"))
+    application.add_handler(CallbackQueryHandler(agree_custom_terms, pattern="^agree_custom$"))
     application.add_handler(CallbackQueryHandler(support_button, pattern="^support$"))
     application.add_handler(CallbackQueryHandler(end_support, pattern="^end_support$"))
     application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back_to_menu$"))
     application.add_handler(CallbackQueryHandler(restart, pattern="^restart$"))
     
-    # Обработчик текстовых сообщений (для всех чатов)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     
     print("🤖 Бот запущен!")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
-    # Запускаем Flask в отдельном потоке
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     print(f"🌐 Веб-сервер запущен на порту {os.environ.get('PORT', 5000)}")
-    
-    # Даем время Flask запуститься
     time.sleep(2)
-    
-    # Запускаем бота
     main()
