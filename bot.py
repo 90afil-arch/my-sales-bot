@@ -411,18 +411,36 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Отправляем уведомление в группу
         await send_notification_to_manager(context, user_id)
         
+        # Формируем сообщение для пользователя
         if lang == 'ru':
-            await update.message.reply_text(
+            success_msg = (
                 "✅ Заявка отправлена на модерацию!\n\n"
                 "📋 Ваше продвижение будет опубликовано в течение 1-7 рабочих дней.\n\n"
                 "Спасибо, что выбрали нас! 🙏"
             )
+            # Проверяем, является ли ссылка на Telegram канал/группу
+            if 't.me' in text or 'telegram' in text.lower():
+                success_msg += (
+                    "\n\n📌 Важное дополнение:\n"
+                    "Если вы указали Telegram-канал или группу, добавьте бота @Marg_not_coin_bot "
+                    "в свой канал/группу и сделайте его администратором (убрав все галочки). "
+                    "Это необходимо для проверки выполнения задания."
+                )
         else:
-            await update.message.reply_text(
+            success_msg = (
                 "✅ Application sent for moderation!\n\n"
                 "📋 Your promotion will be published within 1-7 business days.\n\n"
                 "Thank you for choosing us! 🙏"
             )
+            if 't.me' in text or 'telegram' in text.lower():
+                success_msg += (
+                    "\n\n📌 Important addition:\n"
+                    "If you specified a Telegram channel or group, add bot @Marg_not_coin_bot "
+                    "to your channel/group and make it an administrator (uncheck all checkboxes). "
+                    "This is necessary to verify task completion."
+                )
+        
+        await update.message.reply_text(success_msg)
         
         del user_data[user_id]
 
